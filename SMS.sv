@@ -132,7 +132,9 @@ assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = '1;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
 
-assign LED_USER  = cart_download | bk_state | (status[23] & bk_pending);
+//assign LED_USER  = cart_download | bk_state | (status[23] & bk_pending);
+assign LED_USER  = lr3d;
+
 assign LED_DISK  = 0 ;
 assign LED_POWER = 0 ;
 assign BUTTONS   = 0;
@@ -507,8 +509,16 @@ system #(63) system
 	.nvram_a(nvram_a),
 	.nvram_we(nvram_we),
 	.nvram_d(nvram_d),
-	.nvram_q(nvram_q)
+	.nvram_q(nvram_q),
+	
+	.glasses_we(glasses_we)
 );
+
+wire glasses_we;
+
+reg lr3d;
+always @(posedge clk_sys)
+if (ce_cpu & glasses_we) lr3d <= ram_d[0];
 
 assign joy[0] = status[1] ? joy_1 : joy_0;
 assign joy[1] = status[1] ? joy_0 : joy_1;

@@ -79,7 +79,9 @@ entity system is
 		nvram_a:    out STD_LOGIC_VECTOR(14 downto 0);
 		nvram_d:    out STD_LOGIC_VECTOR( 7 downto 0);
 		nvram_we:   out STD_LOGIC;
-		nvram_q:    in  STD_LOGIC_VECTOR( 7 downto 0)
+		nvram_q:    in  STD_LOGIC_VECTOR( 7 downto 0);
+		
+		glasses_we: out STD_LOGIC
 	);
 end system;
 
@@ -319,6 +321,9 @@ begin
 	ram_we <= ram_WR;
 	ram_d <= D_in;
 	ram_D_out <= ram_q;
+	
+	glasses_we <= '1' when WR_n='0' and MREQ_n='0' and A(15 downto 2)=x"3FFE" else '0';	-- Two lower bits ignored, so writes from 0xfff8 to 0xfffb should work.
+																													-- https://www.smspower.org/Development/3DGlasses
 
 	nvram_a <= (nvram_p and not A(14)) & A(13 downto 0);
 	nvram_we <= nvram_WR;
