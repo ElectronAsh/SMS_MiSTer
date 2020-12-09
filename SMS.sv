@@ -132,8 +132,7 @@ assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = '1;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
 
-//assign LED_USER  = cart_download | bk_state | (status[23] & bk_pending);
-assign LED_USER  = lr3d;
+assign LED_USER  = cart_download | bk_state | (status[23] & bk_pending);
 
 assign LED_DISK  = 0 ;
 assign LED_POWER = 0 ;
@@ -141,6 +140,12 @@ assign BUTTONS   = 0;
 
 assign VIDEO_ARX = status[9] ? 8'd16 : gg ? 8'd10 : 8'd4;
 assign VIDEO_ARY = status[9] ? 8'd9  : gg ? 8'd9  : 8'd3;
+
+// Status Bit Map:
+// 0         1         2         3
+// 01234567890123456789012345678901
+// 0123456789ABCDEFGHIJKLMNOPQRSTUV
+//  XXXXXXXXXXXXXXX XXXXXXXXXX X
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -180,7 +185,7 @@ parameter CONF_STR = {
 	"P2OE,Multitap,Disabled,Port1;",
 	"D3P2OH,Pause Btn Combo,No,Yes;",
 	"P2-;",
-	"P2OG,Serial,OFF,SNAC;",
+	"P2OPQ,Serial,OFF,SNAC,LR3D;",
 	"P2-;",
 	"D2P2OIJ,Gun Control,Disabled,Joy1,Joy2,Mouse;",
 	"D4P2OK,Gun Fire,Joy,Mouse;",
@@ -523,7 +528,8 @@ if (ce_cpu & glasses_we) lr3d <= ram_d[0];
 assign joy[0] = status[1] ? joy_1 : joy_0;
 assign joy[1] = status[1] ? joy_0 : joy_1;
 
-wire raw_serial = status[16];
+wire raw_serial = status[26:25]==2'd1 | status[26:25]==2'd2;
+wire ena_lr3d   = status[26:25]==2'd2;
 wire pause_combo = status[17];
 wire swap = status[1];
 
@@ -535,6 +541,9 @@ wire      joya_tr_out;
 wire      joya_th_out;
 wire      joyb_tr_out;
 wire      joyb_th_out;
+wire      user_tr_out = ena_lr3d ? lr3d : swap ? joyb_tr_out : joya_tr_out;
+wire      user_th_out = swap ? joyb_th_out : joya_th_out;
+
 wire      joya_th;
 wire      joyb_th;
 wire      joyser_th;
@@ -550,7 +559,7 @@ always @(posedge clk_sys) begin
 		joyser[1] <= USER_IN[5];//left
 		joyser[0] <= USER_IN[3];//right	
 		joyser[4] <= USER_IN[2];//trigger / button1
-		joyser[5] <= USER_IN[6];//button2
+		joyser[5] <= (ena_lr3d) ? 1'b1 : USER_IN[6];//button2
 		joyser_th <= USER_IN[4];//sensor
 		
 		if (tmr) tmr <= tmr - 1'd1;
@@ -564,11 +573,11 @@ always @(posedge clk_sys) begin
 		joya_th <=  swap ? 1'b1 : joyser_th;
 		joyb_th <=  swap ? joyser_th : 1'b1;
 
-		USER_OUT <= {swap ? joyb_tr_out : joya_tr_out, 1'b1, swap ? joyb_th_out : joya_th_out, 4'b1111, };
+		USER_OUT <= {user_tr_out, 1'b1, user_th_out, 4'b1111};
 
 	end else begin
 		joya <= ~joy[jcnt];
-		joyb <= status[14] ? 7'h7F : ~joy[1];
+		joyb <= status[14] ? 7'h7F : ~joy[1];	// status[14] = multitap?
 		joya_th <=  1'b1;
 		joyb_th <=  1'b1;
 				
@@ -585,7 +594,7 @@ always @(posedge clk_sys) begin
 			end
 		end
 
-		if(reset | ~status[14]) jcnt <= 0;
+		if(reset | ~status[14]) jcnt <= 0;	// status[14] = multitap?
 	
 		USER_OUT <= 7'b1111111;
 	end
