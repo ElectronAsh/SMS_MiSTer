@@ -1,3 +1,5 @@
+
+
 //============================================================================
 //  SMS replica
 // 
@@ -118,6 +120,15 @@ module emu
 	// 1 - D-/TX
 	// 2..6 - USR2..USR6
 	// Set USER_OUT to 1 to read from USER_IN.
+	//
+	// USER_IO[0] = USERIO_LV2 = ARDUINO_IO15 = "USB" pin 2 = D-
+	// USER_IO[1] = USERIO_LV4 = ARDUINO_IO14 = "USB" pin 3 = D+
+	// USER_IO[2] = USERIO_LV5 = ARDUINO_IO13 = "USB" pin 6 = SSRX+
+	// USER_IO[3] = USERIO_LV3 = ARDUINO_IO12 = "USB" pin 7 = GND_DRAIN
+	// USER_IO[4] = USERIO_LV1 = ARDUINO_IO11 = "USB" pin 8 = SSTX-
+	// USER_IO[5] = USERIO_LV7 = ARDUINO_IO10 = "USB" pin 9 = SSTX+
+	// USER_IO[6] = USERIO_LV6 = ARDUINO_IO8  = "USB" pin 5 = SSRX-
+	//
 	input   [6:0] USER_IN,
 	output  [6:0] USER_OUT,
 
@@ -185,8 +196,8 @@ parameter CONF_STR = {
 	"P2OE,Multitap,Disabled,Port1;",
 	"D3P2OH,Pause Btn Combo,No,Yes;",
 	"P2-;",
-	"P2OPQ,Serial,OFF,SNAC,LR3D;",
-	"P2-;",
+	"P2OPQ,Serial,OFF,SNAC Only,3D Only,SNAC+3D;",
+	"-;",
 	"D2P2OIJ,Gun Control,Disabled,Joy1,Joy2,Mouse;",
 	"D4P2OK,Gun Fire,Joy,Mouse;",
 	"D4P2OL,Gun Port,Port1,Port2;",
@@ -262,7 +273,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .WIDE(0)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({~gun_en,~raw_serial,gg,~gg_avail,~bk_ena}),
+	.status_menumask({~gun_en,~raw_serial|ena_lr3d,gg,~gg_avail,~bk_ena}),
 	.forced_scandoubler(forced_scandoubler),
 	.new_vmode(pal),
 	.gamma_bus(gamma_bus),
@@ -528,12 +539,12 @@ if (ce_cpu & glasses_we) lr3d <= ram_d[0];
 assign joy[0] = status[1] ? joy_1 : joy_0;
 assign joy[1] = status[1] ? joy_0 : joy_1;
 
-wire raw_serial = status[26:25]==2'd1 | status[26:25]==2'd2;
-wire ena_lr3d   = status[26:25]==2'd2;
+wire raw_serial = status[25];		// SNAC is enabled on menu options 1 and 3.
+wire ena_lr3d   = status[26];		// 3D glasses are enabled on menu options 2 and 3.
 wire pause_combo = status[17];
-wire swap = status[1];
+wire joy_swap = status[1];
 
-wire [6:0] joya;	
+wire [6:0] joya;
 wire [6:0] joyb;
 wire [6:0] joyser;
 
@@ -541,8 +552,8 @@ wire      joya_tr_out;
 wire      joya_th_out;
 wire      joyb_tr_out;
 wire      joyb_th_out;
-wire      user_tr_out = ena_lr3d ? lr3d : swap ? joyb_tr_out : joya_tr_out;
-wire      user_th_out = swap ? joyb_th_out : joya_th_out;
+wire      user_tr_out = joy_swap ? joyb_tr_out : joya_tr_out;
+wire      user_th_out = joy_swap ? joyb_th_out : joya_th_out;
 
 wire      joya_th;
 wire      joyb_th;
@@ -553,29 +564,30 @@ always @(posedge clk_sys) begin
 	reg old_th;
 	reg [15:0] tmr;
 
-	if (raw_serial) begin
+	if (raw_serial) begin		// SNAC, with optional 3D glasses output.
 		joyser[3] <= USER_IN[1];//up
 		joyser[2] <= USER_IN[0];//down	
 		joyser[1] <= USER_IN[5];//left
 		joyser[0] <= USER_IN[3];//right	
 		joyser[4] <= USER_IN[2];//trigger / button1
-		joyser[5] <= (ena_lr3d) ? 1'b1 : USER_IN[6];//button2
+		joyser[5] <= USER_IN[6]|ena_lr3d;//button2
 		joyser_th <= USER_IN[4];//sensor
 		
 		if (tmr) tmr <= tmr - 1'd1;
-		if (!USER_IN[0] & !USER_IN[2] & !USER_IN[6] & pause_combo) begin //D 1 2 combo
+		if (!USER_IN[0] & !USER_IN[2] & !(USER_IN[6]|ena_lr3d) & pause_combo) begin //D 1 2 combo
 			tmr <= 57000;
 		end
 		joyser[6] <= !tmr;
 		
-		joya <= swap ? ~joy[1] : joyser;
-		joyb <= swap ? joyser : ~joy[0];	
-		joya_th <=  swap ? 1'b1 : joyser_th;
-		joyb_th <=  swap ? joyser_th : 1'b1;
+		joya <= joy_swap ? ~joy[1] : joyser;
+		joyb <= joy_swap ? joyser : ~joy[0];	
+		joya_th <=  joy_swap ? 1'b1 : joyser_th;
+		joyb_th <=  joy_swap ? joyser_th : 1'b1;
 
-		USER_OUT <= {user_tr_out, 1'b1, user_th_out, 4'b1111};
-
-	end else begin
+		if (ena_lr3d) USER_OUT <= {lr3d, 1'b1, user_th_out, 4'b1111};	// Drive 3D glasses.
+		else USER_OUT <= {user_tr_out, 1'b1, user_th_out, 4'b1111};
+	end
+	else begin
 		joya <= ~joy[jcnt];
 		joyb <= status[14] ? 7'h7F : ~joy[1];	// status[14] = multitap?
 		joya_th <=  1'b1;
@@ -596,7 +608,7 @@ always @(posedge clk_sys) begin
 
 		if(reset | ~status[14]) jcnt <= 0;	// status[14] = multitap?
 	
-		USER_OUT <= 7'b1111111;
+		USER_OUT <= {lr3d | !ena_lr3d, 6'b111111};	// Force USER_OUT[6] High if ena_lr3d is LOW/disabled.
 	end
 	
 	if(gun_en) begin
